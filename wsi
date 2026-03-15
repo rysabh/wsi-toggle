@@ -1,0 +1,162 @@
+#!/usr/bin/zsh
+# Operation in bash is not guaranteed.
+# Copyright (c) 2024, 2025 Quantius Benignus
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#--------------------------------------------------------------------------
+
+# NAME: wsi 
+# PREREQUSITES: 
+#  - whisper.cpp installation (see https://github.com/ggerganov/whisper.cpp) or a portable whisperfile
+#  - recent versions of 'sox', 'curl', 'xsel' or 'wl-copy' and CLI tools from your system's repositories.
+#  - optional xdotool (X11) or ydotool (Wayland) for automatic paste after successful transcription
+#--------------------------------------------------------------------------
+
+# Are we already running this? (prevent multiple hotkey presses)
+pidof -q wsi && exit 0
+
+#---USER CONFIGURATION BLOCK----------------------------------------------------------------
+#The main configuration for this and all other BlahST tools is now in blahst.cfg, please, edit that file as needed.
+source $HOME/.local/bin/blahst.cfg
+#Local overrides:
+AUTOPASTE=1
+#PRIMESEL=1
+#---END USER CONFIG BLOCK-------------------------------------------------------------------
+ 
+#---CHECK DEPENDENCIES.-----Run blahst_depends only if needed or requested----------
+(( $blahst_deps )) || blahst_depends 
+#---END CHECK DEPENDENCIES.-----------------------------------------------------------------
+
+# Process command line arguments first
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -p|--primary)
+            # To enable pasting with the middle mouse button
+            PRIMESEL=1
+            shift
+            ;;
+        -c|--clipboard)
+            # This is transitional warning due to breaking change (will be removed in the future). Clipboard is now the default:
+            desknote "Breaking Change:" "The '-c' flag is deprecated, since clipboard is now default. \n \
+            Remove unnecessary '-c' from your desktop shortcut definitions. \n \
+            To use primary selection as the text source, use the '-p' flag in your desktop shortcuts."
+            shift
+            ;;
+        -w|--whisperfile)
+            whf="$WHISPERFILE"
+            shift
+            ;;
+        -n|--netapi)
+            #This uses the hostname or IP and port specified in the config block
+            #Can be overwritten with a supplied command-line argument IP:PORT instead of this option
+            IPnPORT="$WHOST:$WPORT" 
+            if [[ "$(curl -s -f -o /dev/null -w '%{http_code}' $IPnPORT)" != "200" ]]; then
+                echo "Can't connect to whisper.cpp server at provided address!" >&2  
+                desknote "No connection to Whisper.cpp server" "No whisper.cpp server at $IPnPORT."   
+                exit 1
+            fi
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [-p|--primary] [-n|--netapi] [-w|--whisperfile] [IP:PORT]"
+            echo "  -p, --primary: Use PRIMARY selection instead of CLIPBOARD (default - the better choice when autopaste is on)"
+            echo "  -n, --netapi: Use the preconfigured IP/hostanem and port to call a whisper.cpp server for inference."
+            echo "  -w, --whisperfile: Use the preconfigured whisperfile***.llamafile for inference."
+            echo "  any command-line argument: Expected to be of the form IP:PORT or HOSTNAME:PORT to call a server other than the preconfigured."
+            exit 0
+            ;;
+        *)
+            #The network address and port should have already been sanitized in extension
+            IPnPORT=$1
+            if [[ "$(curl -s -f -o /dev/null -w '%{http_code}' $IPnPORT)" != "200" ]]; then
+                echo "Can't connect to a whisper.cpp server at provided address!" >&2   
+                desknote "No connection to Whisper.cpp server" "No whisper.cpp server at $IPnPORT."   
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+#Hear the complaints of the above tools and do not continue with the sequence:
+set -e
+
+rec -q -t wav $ramf rate 16k silence 1 0.1 1% 1 2.0 5%  2>/dev/null
+
+#The server inference has precedence (i.e. -w will be ignored if -n is present). 
+if [ -n "$IPnPORT" ]; then
+    str=$(curl -S -s $IPnPORT/inference \
+        -H "Content-Type: multipart/form-data" \
+        -F file="@$ramf" \
+        -F temperature="0.0" \
+        -F temperature_inc="0.2" \
+        -F response_format="text")
+# | jq -r '.text' )
+elif [[ "$whf" == *.llamafile ]]; then
+    #echo "Using whisperfile: "
+    str="$($whf -t $NTHR -nt -f $ramf 2>/dev/null)"  
+else
+    str="$(transcribe -t $NTHR -nt -m $WMODEL -f $ramf 2>/dev/null)" 
+fi
+# Whisper detected non-speech events such as (wind blowing): 
+str="${str/\(*\)}"   
+str="${str/\[*\]}"
+str="${str#$'\n'}"    
+str="${str#$'\n'}"
+#Prefer the power of zsh, but lose full POSIX compliance.
+if [ -n "$ZSH_NAME" ]; then
+    str="${str#*([[:space:]])}"
+    str="${(C)str:0:1}${str#?}"
+elif [ -n "$BASH" ]; then
+    #Running in bash because you changed the shebang on line 1
+    str="${str##+([[:space:]])}"
+    str="${str^}"
+else
+    echo "Unknown shell, assuming bash compliance"
+    str="${str##+([[:space:]])}"
+    str="${str^}"
+fi
+
+#We have a result, now we make a few decisions:
+#If this is somehow run in a text console: 
+if [[ -z "${DISPLAY}" ]] || [[ -z "${DESKTOP_SESSION}" ]] || [[ -z "${XDG_CURRENT_DESKTOP}" ]]; then
+#"Not running in a known graphics environment. Using standard output:
+    echo $str ; exit 0
+else
+#xsel or wl-copy:
+ case "$wm" in
+    "x11")
+        if (( $PRIMESEL )); then
+          echo $str | xsel -ip
+          # Simply clicking the middle mouse button. The user must take care of: 1. Window choice. 2. Position within window.
+          # Thus, autopaste from the primary selection is more unpredictable and requires extra care of window focus and mouse pointer repositioning. 
+          if (( $AUTOPASTE )); then xdotool click 2; fi
+        else
+          echo $str | xsel -ib
+          # The automatic paste option makes more sense when using the CLIPBOARD, not primary sellection.
+          if (( $AUTOPASTE )); then xdotool key ctrl+v; fi
+        fi
+        ;;
+    "wayland")
+        if (( $PRIMESEL )); then
+          echo $str | wl-copy -p
+          # Simply clicking the middle mouse button. The user must take care of: 1. Window choice. 2. Position within window.
+          # Thus, autopaste from the primary selection is more unpredictable and requires extra care of window focus and mouse pointer repositioning. 
+          if (( $AUTOPASTE )); then ydotool click 0xC2; fi
+        else
+          echo $str | wl-copy
+          # The key sym sequence may differ from the one below on a variety of systems and keyboard layouts:
+          if (( $AUTOPASTE )); then ydotool key 37:1 55:1 55:0 37:0 ; fi
+        fi 
+        ;;
+    *)
+        echo $str
+        ;;
+ esac
+fi

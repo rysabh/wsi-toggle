@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/wsi-lib.sh"
+
+# Prefer explicit override, else use your previous default.
+# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-base.en.bin}"
+MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-medium.en.bin}"
+# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3.bin}"
+# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3-turbo.bin}"
+
+wsi_prep_model_in_shm "$MODEL_ON_DISK"
+
+# ---- Toggle logic ----
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
+PIDFILE="$CACHE_DIR/wsi_manual.pid"
+mkdir -p "$CACHE_DIR"
+
+# If running -> STOP (send Ctrl+C to the process group); else -> START
+if [[ -f "$PIDFILE" ]] && ps -p "$(cat "$PIDFILE")" >/dev/null 2>&1; then
+  pid="$(cat "$PIDFILE")"
+  kill -INT -- "-$pid" 2>/dev/null || kill -INT "$pid" 2>/dev/null || true
+  rm -f "$PIDFILE"
+  exit 0
+fi
+
+# New session so we can signal the whole group later
+setsid bash -lc "wsi-manual ${WSI_ARGS:-}" >/dev/null 2>&1 &
+echo $! > "$PIDFILE"

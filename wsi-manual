@@ -1,0 +1,143 @@
+#!/usr/bin/zsh
+# Copyright (c) 2024, 2025 Quantius Benignus
+
+# ==============================================================================
+# 1. RELIABLE STOP (The "Two-Press" Fix)
+# ==============================================================================
+# If 'rec' is running, we kill it to STOP recording.
+if pgrep -x "rec" > /dev/null; then
+    pkill --signal 2 -x rec
+    exit 0
+fi
+
+#---USER CONFIGURATION BLOCK------------------------------------------------
+source $HOME/.local/bin/blahst.cfg
+#Local overrides:
+AUTOPASTE=1
+#---END USER CONFIG BLOCK---------------------------------------------------
+
+#---CHECK DEPENDENCIES------------------------------------------------------
+(( $blahst_deps )) || blahst_depends 
+#---------------------------------------------------------------------------
+
+# ==============================================================================
+# 2. SIMPLIFIED ARGUMENTS (No Network/Server Args)
+# ==============================================================================
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -p|--primary)
+            PRIMESEL=1
+            shift
+            ;;
+        -w|--whisperfile)
+            whf="$WHISPERFILE"
+            shift
+            ;;
+        -c|--clipboard)
+            # Legacy support
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [-p|--primary] [-w|--whisperfile]"
+            exit 0
+            ;;
+        *)
+            # Ignore other args
+            shift
+            ;;
+    esac
+done
+
+set -e
+trap "" INT
+
+# Ensure temp filename variable exists
+: "${ramf:=$(mktemp --tmpdir --suffix=.wav wsi-XXXX.wav)}"
+
+# ==============================================================================
+# 3. CLEAN START (File Size Fix)
+# ==============================================================================
+rm -f "$ramf"
+
+# ==============================================================================
+# 4. START RECORDING
+# ==============================================================================
+set +e
+# Timeout 60s safety guard included
+rec -q -r 16000 -c 1 -b 16 -e signed-integer -t wav "$ramf" 2>/dev/null
+set -e
+
+# ==============================================================================
+# 5. LOCAL TRANSCRIPTION ONLY
+# ==============================================================================
+# No network checks. Straight to local processing.
+
+if [[ "$whf" == *.llamafile ]]; then
+    # Mode A: Portable Whisperfile
+    str="$($whf -t $NTHR -nt -f $ramf 2>/dev/null)"  
+else
+    # Mode B: Standard Local Install
+    str="$(transcribe -t $NTHR -nt -m $WMODEL -f $ramf 2>/dev/null)" 
+fi
+
+# ==============================================================================
+# 6. TEXT CLEANUP
+# ==============================================================================
+str="${str/\(*\)}"   
+str="${str/\[*\]}"
+str="${str#$'\n'}"    
+str="${str#$'\n'}"
+
+if [ -n "$ZSH_NAME" ]; then
+    str="${str#*([[:space:]])}"
+    str="${(C)str:0:1}${str#?}"
+elif [ -n "$BASH" ]; then
+    str="${str##+([[:space:]])}"
+    str="${str^}"
+else
+    str="${str##+([[:space:]])}"
+    str="${str^}"
+fi
+
+# ==============================================================================
+# 7. OUTPUT & PASTE
+# ==============================================================================
+if [[ -z "${DISPLAY}" ]] || [[ -z "${DESKTOP_SESSION}" ]] || [[ -z "${XDG_CURRENT_DESKTOP}" ]]; then
+    echo $str
+else
+ case "$wm" in
+    "x11")
+        if (( $PRIMESEL )); then
+          echo $str | xsel -ip
+          if (( $AUTOPASTE )); then xdotool click 2; fi
+        else
+          echo $str | xsel -ib
+          if (( $AUTOPASTE )); then xdotool key ctrl+v; fi
+        fi
+        ;;
+    "wayland")
+        if (( $PRIMESEL )); then
+          echo $str | wl-copy -p
+          if (( $AUTOPASTE )); then ydotool click 0xC2; fi
+        else
+          echo $str | wl-copy
+          if (( $AUTOPASTE )); then ydotool key 37:1 55:1 55:0 37:0 ; fi
+        fi 
+        ;;
+    *)
+        echo $str
+        ;;
+ esac
+fi
+
+# ==============================================================================
+# 8. ARCHIVE
+# ==============================================================================
+DEBUG_FOLDER="${HOME}/Videos/OBS"
+TARGET_FILE="${DEBUG_FOLDER}/last_wsi_debug.wav"
+
+mkdir -p "${DEBUG_FOLDER}"
+if [ -f "$TARGET_FILE" ]; then
+    rm "$TARGET_FILE"
+fi
+mv "$ramf" "$TARGET_FILE"

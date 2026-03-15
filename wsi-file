@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/wsi-lib.sh"
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -lt 1 ]]; then
+  cat <<'EOF'
+Usage: wsi-file <input.(mp4|m4a|mp3|wav|...)>
+
+Examples:
+  wsi-file recording.m4a > recording.txt
+  MODEL_ON_DISK=~/AI/Models/whisper/ggml-base.en.bin wsi-file video.mp4 > video.txt
+EOF
+  exit $(( $# < 1 ? 2 : 0 ))
+fi
+
+input_path="$1"
+[[ -f "$input_path" ]] || wsi_die "Input file not found: $input_path"
+
+# Keep this script self-contained like wsi-manual-toggle (no config file reads).
+# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-base.en.bin}"
+MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-medium.en.bin}"
+# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3.bin}"
+# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3-turbo.bin}"
+
+echo "[wsi-file] Step 1/4: Preparing model..." >&2
+wsi_prep_model_in_shm "$MODEL_ON_DISK"
+
+tmp_wav="$(mktemp --tmpdir --suffix=.wav wsi-file-XXXXXX)"
+transcribe_err=""
+out_txt=""
+cleanup() {
+  rm -f "$tmp_wav" 2>/dev/null || true
+  [[ -n "${transcribe_err:-}" ]] && rm -f "$transcribe_err" 2>/dev/null || true
+  [[ -n "${out_txt:-}" ]] && rm -f "$out_txt" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+echo "[wsi-file] Step 2/4: Converting audio..." >&2
+wsi_to_wav16k_mono "$input_path" "$tmp_wav"
+
+wsi_require transcribe
+transcribe_err="$(mktemp --tmpdir --suffix=.log wsi-file-XXXXXX)"
+out_txt="$(mktemp --tmpdir --suffix=.txt wsi-file-XXXXXX)"
+
+echo "[wsi-file] Step 3/4: Transcribing..." >&2
+
+transcribe -t "${NTHR:-8}" -nt -m "$WMODEL" -f "$tmp_wav" >"$out_txt" 2>"$transcribe_err" &
+pid=$!
+stage_start=$SECONDS
+while kill -0 "$pid" 2>/dev/null; do
+  elapsed=$((SECONDS - stage_start))
+  echo "[wsi-file] Transcribing... (${elapsed}s elapsed)" >&2
+  sleep 10
+done
+wait "$pid" || true
+
+if ! grep -q '[^[:space:]]' "$out_txt"; then
+  if [[ -s "$transcribe_err" ]]; then
+    cat "$transcribe_err" >&2
+  fi
+  wsi_die "No transcript produced (see errors above). Try an absolute file path or check CUDA/ffmpeg/sox."
+fi
+
+echo "[wsi-file] Step 4/4: Saving transcript..." >&2
+
+out_dir="$(dirname -- "$input_path")"
+base_name="$(basename -- "$input_path")"
+stem="${base_name%.*}"
+out_path="${out_dir}/${stem}.txt"
+if [[ -e "$out_path" ]]; then
+  i=1
+  while [[ -e "${out_dir}/${stem}-${i}.txt" ]]; do
+    i=$((i + 1))
+  done
+  out_path="${out_dir}/${stem}-${i}.txt"
+fi
+
+mv -- "$out_txt" "$out_path"
+out_txt=""
+echo "[wsi-file] Saved transcript: $out_path" >&2
+echo "[wsi-file] Done" >&2
