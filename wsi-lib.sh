@@ -4,17 +4,7 @@ set -euo pipefail
 wsi_die() { wsi_note "$*"; exit 1; }
 
 wsi_require() {
-  command -v "$1" >/dev/null 2>&1 || wsi_die "Missing dependency: $1"
-}
-
-wsi_notify_text() {
-  local msg="${1#\[wsi-model\] }" nl=$'\n'
-  msg="${msg/: /:$nl}"
-  msg="${msg/ into \/dev\/shm/${nl}into /dev/shm}"
-  msg="${msg/ from \/dev\/shm/${nl}from /dev/shm}"
-  msg="${msg/ because /${nl}because }"
-  msg="${msg/. Try /.${nl}Try }"
-  printf '%s' "$msg"
+  command -v "$1" >/dev/null 2>&1 || wsi_die "Missing dependency:"$'\n'"$1"
 }
 
 wsi_notify() {
@@ -31,7 +21,7 @@ wsi_notify() {
 
 wsi_note() {
   local msg="$1" log_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
-  wsi_notify "$(wsi_notify_text "$msg")"
+  wsi_notify "$msg"
   printf '%s\n' "$msg" >&2
   mkdir -p "$log_dir" 2>/dev/null || true
   { printf '%s %s\n' "$(date '+%F %T')" "$msg" >> "$log_dir/wsi-model.log"; } 2>/dev/null || true
@@ -46,16 +36,16 @@ wsi_other_jobs_active() {
 
 wsi_prep_model_in_shm() {
   local model_on_disk="${1:-}"
-  [[ -n "$model_on_disk" ]] || wsi_die "Model path not configured (set WMODEL or MODEL_ON_DISK)."
-  [[ -f "$model_on_disk" ]] || wsi_die "Model file not found: $model_on_disk"
+  [[ -n "$model_on_disk" ]] || wsi_die "Model path not configured."$'\n'"Set WMODEL or MODEL_ON_DISK."
+  [[ -f "$model_on_disk" ]] || wsi_die "Model file not found:"$'\n'"$model_on_disk"
 
   local model_name model_in_shm
   model_name="$(basename "$model_on_disk")"
   model_in_shm="/dev/shm/$model_name"
 
   if [[ ! -f "$model_in_shm" ]]; then
-    cp -f "$model_on_disk" "$model_in_shm" || wsi_die "Failed to load $model_name into /dev/shm"
-    wsi_note "[wsi-model] Loaded $model_name into /dev/shm"
+    cp -f "$model_on_disk" "$model_in_shm" || wsi_die "[wsi-model] Failed to load $model_name"$'\n'"into /dev/shm"
+    wsi_note "[wsi-model] Loaded $model_name"$'\n'"into /dev/shm"
   fi
 
   local model stale_in_shm
@@ -63,11 +53,11 @@ wsi_prep_model_in_shm() {
     stale_in_shm="/dev/shm/ggml-$model.bin"
     [[ "$stale_in_shm" == "$model_in_shm" || ! -f "$stale_in_shm" ]] && continue
     if wsi_other_jobs_active; then
-      wsi_note "[wsi-model] Did not remove stale $(basename "$stale_in_shm") from /dev/shm because another job is active"
+      wsi_note "[wsi-model] Did not remove stale $(basename "$stale_in_shm")"$'\n'"from /dev/shm"$'\n'"because another job is active"
       continue
     fi
-    rm -f -- "$stale_in_shm" || wsi_die "Failed to remove stale $(basename "$stale_in_shm") from /dev/shm"
-    wsi_note "[wsi-model] Removed stale $(basename "$stale_in_shm") from /dev/shm"
+    rm -f -- "$stale_in_shm" || wsi_die "[wsi-model] Failed to remove stale $(basename "$stale_in_shm")"$'\n'"from /dev/shm"
+    wsi_note "[wsi-model] Removed stale $(basename "$stale_in_shm")"$'\n'"from /dev/shm"
   done
 
   export WHISPER_DMODEL="$model_in_shm"
@@ -103,7 +93,7 @@ wsi_to_wav16k_mono() {
   elif command -v sox >/dev/null 2>&1; then
     sox "$input_path" -r 16000 -c 1 -b 16 "$out_wav"
   else
-    wsi_die "Install ffmpeg (recommended) or sox."
+    wsi_die "Install ffmpeg (recommended)"$'\n'"or sox."
   fi
 }
 
