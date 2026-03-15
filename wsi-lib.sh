@@ -7,6 +7,16 @@ wsi_require() {
   command -v "$1" >/dev/null 2>&1 || wsi_die "Missing dependency: $1"
 }
 
+wsi_notify_text() {
+  local msg="${1#\[wsi-model\] }" nl=$'\n'
+  msg="${msg/: /:$nl}"
+  msg="${msg/ into \/dev\/shm/${nl}into /dev/shm}"
+  msg="${msg/ from \/dev\/shm/${nl}from /dev/shm}"
+  msg="${msg/ because /${nl}because }"
+  msg="${msg/. Try /.${nl}Try }"
+  printf '%s' "$msg"
+}
+
 wsi_notify() {
   local msg="$1"
   if command -v notify-send >/dev/null 2>&1; then
@@ -21,7 +31,7 @@ wsi_notify() {
 
 wsi_note() {
   local msg="$1" log_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
-  wsi_notify "$msg"
+  wsi_notify "$(wsi_notify_text "$msg")"
   printf '%s\n' "$msg" >&2
   mkdir -p "$log_dir" 2>/dev/null || true
   { printf '%s %s\n' "$(date '+%F %T')" "$msg" >> "$log_dir/wsi-model.log"; } 2>/dev/null || true
