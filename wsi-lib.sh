@@ -48,15 +48,17 @@ wsi_prep_model_in_shm() {
     wsi_note "[wsi-model] Loaded $model_name into /dev/shm"
   fi
 
-  if ! wsi_other_jobs_active; then
-    local model stale_in_shm
-    for model in ${WSI_MODELS:-}; do
-      stale_in_shm="/dev/shm/ggml-$model.bin"
-      [[ "$stale_in_shm" == "$model_in_shm" || ! -f "$stale_in_shm" ]] && continue
-      rm -f -- "$stale_in_shm" || wsi_die "Failed to remove stale $(basename "$stale_in_shm") from /dev/shm"
-      wsi_note "[wsi-model] Removed stale $(basename "$stale_in_shm") from /dev/shm"
-    done
-  fi
+  local model stale_in_shm
+  for model in ${WSI_MODELS:-}; do
+    stale_in_shm="/dev/shm/ggml-$model.bin"
+    [[ "$stale_in_shm" == "$model_in_shm" || ! -f "$stale_in_shm" ]] && continue
+    if wsi_other_jobs_active; then
+      wsi_note "[wsi-model] Did not remove stale $(basename "$stale_in_shm") from /dev/shm because another job is active"
+      continue
+    fi
+    rm -f -- "$stale_in_shm" || wsi_die "Failed to remove stale $(basename "$stale_in_shm") from /dev/shm"
+    wsi_note "[wsi-model] Removed stale $(basename "$stale_in_shm") from /dev/shm"
+  done
 
   export WHISPER_DMODEL="$model_in_shm"
   export WMODEL="$model_in_shm"
