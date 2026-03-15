@@ -4,12 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/wsi-lib.sh"
-
-# Prefer explicit override, else use your previous default.
-# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-base.en.bin}"
-MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-medium.en.bin}"
-# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3.bin}"
-# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3-turbo.bin}"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/wsi-models.sh"
 
 wsi_prep_model_in_shm "$MODEL_ON_DISK"
 

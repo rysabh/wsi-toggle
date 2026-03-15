@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/wsi-lib.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/wsi-models.sh"
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -lt 1 ]]; then
   cat <<'EOF'
@@ -11,19 +13,13 @@ Usage: wsi-file <input.(mp4|m4a|mp3|wav|...)>
 
 Examples:
   wsi-file recording.m4a > recording.txt
-  MODEL_ON_DISK=~/AI/Models/whisper/ggml-base.en.bin wsi-file video.mp4 > video.txt
+  WSI_MODEL=base.en wsi-file video.mp4 > video.txt
 EOF
   exit $(( $# < 1 ? 2 : 0 ))
 fi
 
 input_path="$1"
 [[ -f "$input_path" ]] || wsi_die "Input file not found: $input_path"
-
-# Keep this script self-contained like wsi-manual-toggle (no config file reads).
-# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-base.en.bin}"
-MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-medium.en.bin}"
-# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3.bin}"
-# MODEL_ON_DISK="${MODEL_ON_DISK:-$HOME/Applications/whisper.cpp/models/ggml-large-v3-turbo.bin}"
 
 echo "[wsi-file] Step 1/4: Preparing model..." >&2
 wsi_prep_model_in_shm "$MODEL_ON_DISK"
