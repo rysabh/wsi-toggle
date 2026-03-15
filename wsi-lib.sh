@@ -7,6 +7,26 @@ wsi_require() {
   command -v "$1" >/dev/null 2>&1 || wsi_die "Missing dependency: $1"
 }
 
+wsi_notify() {
+  local msg="$1"
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -a wsi "WSI Model Cache" "$msg" >/dev/null 2>&1 || true
+  elif command -v gdbus >/dev/null 2>&1; then
+    gdbus call --session --dest org.freedesktop.Notifications \
+      --object-path /org/freedesktop/Notifications \
+      --method org.freedesktop.Notifications.Notify \
+      wsi 0 "" "WSI Model Cache" "$msg" [] {} 3000 >/dev/null 2>&1 || true
+  fi
+}
+
+wsi_note() {
+  local msg="$1" log_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+  wsi_notify "$msg"
+  printf '%s\n' "$msg" >&2
+  mkdir -p "$log_dir" 2>/dev/null || true
+  { printf '%s %s\n' "$(date '+%F %T')" "$msg" >> "$log_dir/wsi-model.log"; } 2>/dev/null || true
+}
+
 wsi_prep_model_in_shm() {
   local model_on_disk="${1:-}"
   [[ -n "$model_on_disk" ]] || wsi_die "Model path not configured (set WMODEL or MODEL_ON_DISK)."
@@ -18,7 +38,16 @@ wsi_prep_model_in_shm() {
 
   if [[ ! -f "$model_in_shm" ]]; then
     cp -f "$model_on_disk" "$model_in_shm"
+    wsi_note "[wsi-model] Loaded $model_name into /dev/shm"
   fi
+
+  local model stale_in_shm
+  for model in ${WSI_MODELS:-}; do
+    stale_in_shm="/dev/shm/ggml-$model.bin"
+    [[ "$stale_in_shm" == "$model_in_shm" || ! -f "$stale_in_shm" ]] && continue
+    rm -f -- "$stale_in_shm"
+    wsi_note "[wsi-model] Removed stale $(basename "$stale_in_shm") from /dev/shm"
+  done
 
   export WHISPER_DMODEL="$model_in_shm"
   export WMODEL="$model_in_shm"
