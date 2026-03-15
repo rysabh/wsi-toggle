@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-wsi_die() { echo "$*" >&2; exit 1; }
+wsi_die() { wsi_note "$*"; exit 1; }
 
 wsi_require() {
   command -v "$1" >/dev/null 2>&1 || wsi_die "Missing dependency: $1"
