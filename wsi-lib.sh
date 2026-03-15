@@ -28,7 +28,7 @@ wsi_note() {
 }
 
 wsi_other_jobs_active() {
-  if pgrep -af 'wsi-file|wsi-manual|transcribe|(^|/)rec( |$)' | grep -Eqv "^$BASHPID "; then
+  if pgrep -af '(^|/)(wsi-file|wsi-manual|transcribe|rec)( |$)' | grep -Eqv "^$BASHPID "; then
     return 0
   fi
   return 1
