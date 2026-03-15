@@ -19,7 +19,7 @@ EOF
 fi
 
 input_path="$1"
-[[ -f "$input_path" ]] || wsi_die "Input file not found:"$'\n'"$input_path"
+[[ -f "$input_path" ]] || wsi_die "Input File Missing" "$input_path"
 
 echo "[wsi-file] Step 1/4: Preparing model..." >&2
 wsi_prep_model_in_shm "$MODEL_ON_DISK"
@@ -57,7 +57,7 @@ if ! grep -q '[^[:space:]]' "$out_txt"; then
   if [[ -s "$transcribe_err" ]]; then
     cat "$transcribe_err" >&2
   fi
-  wsi_die "No transcript produced (see errors above)."$'\n'"Try an absolute file path or check CUDA/ffmpeg/sox."
+  wsi_die "No Transcript" "Try an absolute file path or check CUDA/ffmpeg/sox"
 fi
 
 echo "[wsi-file] Step 4/4: Saving transcript..." >&2
