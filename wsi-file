@@ -21,8 +21,9 @@ fi
 input_path="$1"
 [[ -f "$input_path" ]] || wsi_die "Input File Missing" "$input_path"
 
-echo "[wsi-file] Step 1/4: Preparing model..." >&2
-wsi_prep_model_in_shm "$MODEL_ON_DISK"
+echo "[wsi-file] Step 1/4: Preparing model: ${MODEL_ON_DISK}" >&2
+wsi_prep_model_in_shm "${MODEL_ON_DISK}"
+echo "[wsi-file] Model path used by transcribe: $WMODEL" >&2
 
 tmp_wav="$(mktemp --tmpdir --suffix=.wav wsi-file-XXXXXX)"
 transcribe_err=""
@@ -60,8 +61,6 @@ if ! grep -q '[^[:space:]]' "$out_txt"; then
   wsi_die "No Transcript" "Try an absolute file path or check CUDA/ffmpeg/sox"
 fi
 
-echo "[wsi-file] Step 4/4: Saving transcript..." >&2
-
 out_dir="$(dirname -- "$input_path")"
 base_name="$(basename -- "$input_path")"
 stem="${base_name%.*}"
@@ -74,6 +73,7 @@ if [[ -e "$out_path" ]]; then
   out_path="${out_dir}/${stem}-${i}.txt"
 fi
 
+echo "[wsi-file] Step 4/4: Saving transcript: ${out_path}" >&2
 mv -- "$out_txt" "$out_path"
 out_txt=""
 echo "[wsi-file] Saved transcript: $out_path" >&2
