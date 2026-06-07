@@ -44,7 +44,16 @@ out_txt="$(mktemp --tmpdir --suffix=.txt wsi-file-XXXXXX)"
 
 echo "[wsi-file] Step 3/4: Transcribing..." >&2
 
-transcribe -t "${NTHR:-8}" -nt -m "$WMODEL" -f "$tmp_wav" >"$out_txt" 2>"$transcribe_err" &
+# Decoding flags that prevent runaway repetition/hallucination loops on long audio.
+# Knobs live in wsi-models.sh: WSI_VAD (skip non-speech) and WSI_MAX_CONTEXT (-mc).
+transcribe_args=(-t "${NTHR:-8}" -nt -mc "${WSI_MAX_CONTEXT:-0}" -m "$WMODEL" -f "$tmp_wav")
+if [[ "${WSI_VAD:-1}" != "0" ]]; then
+  [[ -f "${WSI_VAD_MODEL:-}" ]] || wsi_die "VAD Model Not Found" "${WSI_VAD_MODEL:-<unset>} — fetch: \"$WSI_MODEL_DIR/download-vad-model.sh\" silero-v5.1.2  (or set WSI_VAD=0)"
+  transcribe_args+=(--vad --vad-model "$WSI_VAD_MODEL")
+fi
+echo "[wsi-file] anti-loop: VAD=${WSI_VAD:-1} max-context=${WSI_MAX_CONTEXT:-0}" >&2
+
+transcribe "${transcribe_args[@]}" >"$out_txt" 2>"$transcribe_err" &
 pid=$!
 stage_start=$SECONDS
 while kill -0 "$pid" 2>/dev/null; do
