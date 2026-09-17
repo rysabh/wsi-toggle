@@ -64,7 +64,8 @@ rm -f "$ramf"
 # ==============================================================================
 set +e
 # Timeout 60s safety guard included
-rec -q -r 16000 -c 1 -b 16 -e signed-integer -t wav "$ramf" 2>/dev/null
+PULSE_PROP='media.role=phone' rec -q -r 16000 -c 1 -b 16 -e signed-integer -t wav "$ramf" 2>/dev/null
+# rec -q -r 16000 -c 1 -b 16 -e signed-integer -t wav "$ramf" 2>/dev/null
 set -e
 
 # ==============================================================================
